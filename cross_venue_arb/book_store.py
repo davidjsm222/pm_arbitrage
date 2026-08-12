@@ -1,4 +1,4 @@
-"""In-memory storage for River's full orderbook WebSocket frames."""
+"""Normalized in-memory storage for both venues' full order books."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ class PriceLevel:
 
 @dataclass(frozen=True, slots=True)
 class Book:
-    river_id: int
+    market_id: str
     bids: tuple[PriceLevel, ...]
     asks: tuple[PriceLevel, ...]
     best_bid_price: float | None
@@ -67,52 +67,52 @@ def _levels(value: Any) -> tuple[PriceLevel, ...]:
 
 
 class BookStore:
-    """Last-valid-book store keyed by ``river_id``.
+    """Last-valid-book store keyed by ``market_id``.
 
-    River sends complete book payloads for both snapshots and updates. Invalid
-    crossed-book frames are counted and discarded, leaving the most recent
-    valid book available to readers until River sends its fresh snapshot.
+    Venue adapters emit complete normalized books for both snapshots and updates.
+    Invalid crossed-book frames are counted and discarded, leaving the most
+    recent valid book available to readers until a fresh snapshot arrives.
     """
 
     def __init__(self) -> None:
-        self._books: dict[int, Book] = {}
-        self._invalid_frames: dict[int, int] = {}
-        self._last_invalid_at: dict[int, datetime] = {}
+        self._books: dict[str | int, Book] = {}
+        self._invalid_frames: dict[str, int] = {}
+        self._last_invalid_at: dict[str, datetime] = {}
 
-    def get(self, river_id: int) -> Book | None:
-        return self._books.get(river_id)
+    def get(self, market_id: str | int) -> Book | None:
+        return self._books.get(market_id) or self._books.get(str(market_id))
 
     @property
-    def books(self) -> Mapping[int, Book]:
+    def books(self) -> Mapping[str | int, Book]:
         return self._books.copy()
 
-    def invalid_frame_count(self, river_id: int) -> int:
-        return self._invalid_frames.get(river_id, 0)
+    def invalid_frame_count(self, market_id: str | int) -> int:
+        return self._invalid_frames.get(str(market_id), 0)
 
-    def last_invalid_at(self, river_id: int) -> datetime | None:
-        return self._last_invalid_at.get(river_id)
+    def last_invalid_at(self, market_id: str | int) -> datetime | None:
+        return self._last_invalid_at.get(str(market_id))
 
     def apply_message(self, message: Any) -> StoreResult:
         frame_type = _field(message, "type")
         if frame_type not in {"snapshot", "update"}:
             return StoreResult.IGNORED
 
-        river_id = _field(message, "river_id")
-        if river_id is None:
-            raise ValueError(f"{frame_type} frame is missing river_id")
-        river_id = int(river_id)
+        market_id = _field(message, "market_id")
+        if market_id is None:
+            raise ValueError(f"{frame_type} frame is missing market_id")
+        market_id = str(market_id)
 
         data = _mapping(_field(message, "data"))
-        payload_river_id = data.get("river_id")
-        if payload_river_id is not None and int(payload_river_id) != river_id:
+        payload_market_id = data.get("market_id")
+        if payload_market_id is not None and str(payload_market_id) != market_id:
             raise ValueError(
-                f"frame river_id {river_id} does not match payload river_id {payload_river_id}"
+                f"frame market_id {market_id} does not match payload market_id {payload_market_id}"
             )
 
         now = datetime.now(timezone.utc)
         if data.get("is_valid") is False:
-            self._invalid_frames[river_id] = self.invalid_frame_count(river_id) + 1
-            self._last_invalid_at[river_id] = now
+            self._invalid_frames[market_id] = self.invalid_frame_count(market_id) + 1
+            self._last_invalid_at[market_id] = now
             return StoreResult.DROPPED_INVALID
 
         bids = _levels(data.get("bids"))
@@ -120,8 +120,8 @@ class BookStore:
         best_bid = data.get("best_bid_price")
         best_ask = data.get("best_ask_price")
 
-        self._books[river_id] = Book(
-            river_id=river_id,
+        self._books[market_id] = Book(
+            market_id=market_id,
             bids=bids,
             asks=asks,
             best_bid_price=float(best_bid) if best_bid is not None else None,
@@ -130,4 +130,3 @@ class BookStore:
             received_at=now,
         )
         return StoreResult.STORED
-

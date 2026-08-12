@@ -1,0 +1,26 @@
+#!/bin/sh
+set -eu
+
+# Resolve this file's real location so the launcher also works through the
+# ~/.local/bin/arbmonitor symlink installed for the current user.
+SOURCE=$0
+while [ -L "$SOURCE" ]; do
+    SOURCE_DIR=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+    SOURCE_TARGET=$(readlink "$SOURCE")
+    case $SOURCE_TARGET in
+        /*) SOURCE=$SOURCE_TARGET ;;
+        *) SOURCE=$SOURCE_DIR/$SOURCE_TARGET ;;
+    esac
+done
+
+PROJECT_ROOT=$(CDPATH= cd -- "$(dirname -- "$SOURCE")" && pwd)
+PYTHON=$PROJECT_ROOT/.venv/bin/python
+
+if [ ! -x "$PYTHON" ]; then
+    echo "arbmonitor: project virtual environment not found at $PYTHON" >&2
+    echo "Run: python3 -m venv .venv && .venv/bin/python -m pip install -r requirements.txt" >&2
+    exit 1
+fi
+
+cd "$PROJECT_ROOT"
+exec "$PYTHON" -m cross_venue_arb.dashboard "$@"

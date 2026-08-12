@@ -1,48 +1,79 @@
-# River arb monitor — stages 1–3
+# Cross-venue prediction-market arbitrage monitor
 
-The monitor connects to River, subscribes to three candidate cross-venue pairs,
-keeps the last valid full book in memory, and calculates both executable
-top-of-book directions after taker fees. It does not place orders, run gates,
-or walk depth.
+This is a read-only Kalshi and Polymarket US monitor. It discovers markets from
+each venue's native REST API, matches likely equivalent contracts, streams both
+native order books, and displays fee-adjusted top-of-book and depth economics.
+It never places, modifies, or cancels orders.
 
 ## Setup
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
-export RIVER_KEY_ID='<Settings -> API Keys UUID>'
-export RIVER_PRIVATE_KEY='<base64 private key shown once>'
+cp .env.example .env
 ```
 
-Search Kalshi and Polymarket independently for active, unexpired markets:
+Use Kalshi production credentials and Polymarket US developer credentials:
+
+```dotenv
+KALSHI_API_KEY_ID=your-key-id
+KALSHI_PRIVATE_KEY_PATH=/absolute/path/to/kalshi-private-key.pem
+POLYMARKET_US_API_KEY_ID=your-key-id
+POLYMARKET_US_SECRET_KEY=your-base64-secret
+```
+
+Discovery uses public REST endpoints. Credentials are read only when opening
+the authenticated market-data WebSockets.
+
+## Discover native markets
 
 ```bash
-.venv/bin/python -m river_arb_monitor.stage1 discover
+.venv/bin/python -m cross_venue_arb.stage1 discover --limit 20
 ```
 
-The confirmed-live test IDs are hardcoded in `river_arb_monitor/stage1.py`.
-After a future discovery run, update that tuple before streaming:
+Stream one or more native venue books:
 
 ```bash
-.venv/bin/python -m river_arb_monitor.stage1 stream
+.venv/bin/python -m cross_venue_arb.stage1 stream \
+  --kalshi KALSHI-MARKET-TICKER \
+  --polymarket polymarket-us-market-slug
 ```
 
-For a one-off check without editing that list:
+Monitor explicit pairs without rebuilding the matcher cache:
 
 ```bash
-.venv/bin/python -m river_arb_monitor.stage1 stream --river-id 123 --river-id 456
+.venv/bin/python -m cross_venue_arb.stage1 edges \
+  --pair example KALSHI-MARKET-TICKER polymarket-us-market-slug
 ```
 
-Invalid (`is_valid=false`) crossed-book frames are counted and dropped. The
-last valid book stays in the store until the documented fresh snapshot arrives.
-
-Print both one-contract top-of-book edge directions for each pair:
+## Build the matcher cache
 
 ```bash
-.venv/bin/python -m river_arb_monitor.stage1 edges --duration 20
+.venv/bin/python -m cross_venue_arb.matcher
 ```
 
-Fee defaults were verified on 2026-07-11: Kalshi `KXMENWORLDCUP` uses taker
-coefficient `0.07` and multiplier `1`; Polymarket US uses taker coefficient
-`0.06`. Venue-specific published rounding rules are applied to each one-contract
-calculation.
+The matcher independently fetches all active native markets, applies the
+configured liquidity floor, generates bounded entity candidates, checks hard
+resolution constraints, and writes a complete SQLite snapshot to
+`matcher_cache.sqlite3`. Native Kalshi tickers and Polymarket US slugs are the
+cache keys. Existing false-pair exclusions survive subsequent rebuilds.
+
+```bash
+.venv/bin/python -m cross_venue_arb.matcher --list-exclusions
+.venv/bin/python -m cross_venue_arb.matcher \
+  --unflag KALSHI-MARKET-TICKER polymarket-us-market-slug
+```
+
+## Run the dashboard
+
+```bash
+./arbmonitor
+```
+
+The dashboard subscribes every cached high-confidence pair, normalizes both
+venue books to executable YES bid/ask ladders, and applies the existing fee,
+depth, staleness, and persistence gates. Press Enter or `d` for pair details,
+`f` to exclude a false match, `x` to review exclusions, `r` to force a re-sort,
+and `q` to quit.
+
+The application remains strictly observational. No trading endpoint is called.

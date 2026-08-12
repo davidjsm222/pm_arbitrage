@@ -2,17 +2,17 @@ from datetime import datetime, timezone
 from decimal import Decimal
 import unittest
 
-from river_arb_monitor.book_store import Book
-from river_arb_monitor.edge import (
+from cross_venue_arb.book_store import Book
+from cross_venue_arb.edge import (
     kalshi_taker_fee,
     polymarket_us_taker_fee,
     top_of_book_edges,
 )
 
 
-def book(river_id: int, bid: float, ask: float) -> Book:
+def book(market_id: int, bid: float, ask: float) -> Book:
     return Book(
-        river_id=river_id,
+        market_id=market_id,
         bids=(),
         asks=(),
         best_bid_price=bid,
@@ -31,10 +31,10 @@ class FeeTests(unittest.TestCase):
 
     def test_polymarket_current_curve_and_bankers_rounding(self):
         self.assertEqual(
-            polymarket_us_taker_fee("0.50", contracts=100), Decimal("1.50")
+            polymarket_us_taker_fee("0.50", contracts=100), Decimal("1.25")
         )
-        self.assertEqual(polymarket_us_taker_fee("0.50"), Decimal("0.02"))
-        # Raw fee is $0.045; half-even rounds down to $0.04, unlike ceiling.
+        self.assertEqual(polymarket_us_taker_fee("0.50"), Decimal("0.01"))
+        # Raw fee is $0.0375; nearest-cent rounding produces $0.04.
         self.assertEqual(
             polymarket_us_taker_fee("0.50", contracts=3), Decimal("0.04")
         )

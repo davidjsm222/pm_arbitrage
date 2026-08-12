@@ -9,7 +9,7 @@ from .book_store import Book
 
 
 KALSHI_TAKER_COEFFICIENT = Decimal("0.07")
-POLYMARKET_US_TAKER_COEFFICIENT = Decimal("0.06")
+POLYMARKET_US_TAKER_COEFFICIENT = Decimal("0.05")
 KALSHI_FEE_INCREMENT = Decimal("0.0001")  # one centicent
 POLYMARKET_US_FEE_INCREMENT = Decimal("0.01")
 
@@ -76,7 +76,12 @@ class PairEdges:
     buy_yes_polymarket: DirectionEdge
 
 
-def top_of_book_edges(kalshi: Book, polymarket: Book) -> PairEdges:
+def top_of_book_edges(
+    kalshi: Book,
+    polymarket: Book,
+    *,
+    polymarket_coefficient: Decimal = POLYMARKET_US_TAKER_COEFFICIENT,
+) -> PairEdges:
     """Calculate both one-pair directions from executable YES bid/ask prices."""
     prices = (
         kalshi.best_bid_price,
@@ -94,7 +99,9 @@ def top_of_book_edges(kalshi: Book, polymarket: Book) -> PairEdges:
 
     kalshi_buy_gross = polymarket_bid - kalshi_ask
     kalshi_buy_kalshi_fee = kalshi_taker_fee(kalshi_ask)
-    kalshi_buy_polymarket_fee = polymarket_us_taker_fee(polymarket_bid)
+    kalshi_buy_polymarket_fee = polymarket_us_taker_fee(
+        polymarket_bid, coefficient=polymarket_coefficient
+    )
     kalshi_buy = DirectionEdge(
         buy_yes_venue="KALSHI",
         buy_no_venue="POLYMARKET",
@@ -110,7 +117,9 @@ def top_of_book_edges(kalshi: Book, polymarket: Book) -> PairEdges:
 
     polymarket_buy_gross = kalshi_bid - polymarket_ask
     polymarket_buy_kalshi_fee = kalshi_taker_fee(kalshi_bid)
-    polymarket_buy_polymarket_fee = polymarket_us_taker_fee(polymarket_ask)
+    polymarket_buy_polymarket_fee = polymarket_us_taker_fee(
+        polymarket_ask, coefficient=polymarket_coefficient
+    )
     polymarket_buy = DirectionEdge(
         buy_yes_venue="POLYMARKET",
         buy_no_venue="KALSHI",
@@ -127,4 +136,3 @@ def top_of_book_edges(kalshi: Book, polymarket: Book) -> PairEdges:
         buy_yes_kalshi=kalshi_buy,
         buy_yes_polymarket=polymarket_buy,
     )
-

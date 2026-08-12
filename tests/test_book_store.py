@@ -2,16 +2,15 @@ from datetime import datetime
 from types import SimpleNamespace
 import unittest
 
-from river_arb_monitor.book_store import BookStore, StoreResult
-from rivermarkets.realtime.messages import parse_message
+from cross_venue_arb.book_store import BookStore, StoreResult
 
 
-def frame(*, river_id=123, frame_type="snapshot", is_valid=True, bid=0.42, ask=0.43):
+def frame(*, market_id=123, frame_type="snapshot", is_valid=True, bid=0.42, ask=0.43):
     return SimpleNamespace(
         type=frame_type,
-        river_id=river_id,
+        market_id=market_id,
         data={
-            "river_id": river_id,
+            "market_id": market_id,
             "bids": [{"price": bid, "qty": 1500}],
             "asks": [{"price": ask, "qty": 2200}],
             "best_bid_price": bid,
@@ -23,7 +22,7 @@ def frame(*, river_id=123, frame_type="snapshot", is_valid=True, bid=0.42, ask=0
 
 
 class BookStoreTests(unittest.TestCase):
-    def test_stores_snapshot_by_river_id(self):
+    def test_stores_snapshot_by_market_id(self):
         store = BookStore()
 
         result = store.apply_message(frame())
@@ -36,20 +35,16 @@ class BookStoreTests(unittest.TestCase):
         self.assertEqual(book.bids[0].qty, 1500)
         self.assertIsInstance(book.exchange_timestamp, datetime)
 
-    def test_accepts_the_sdk_generic_websocket_message(self):
+    def test_accepts_a_normalized_mapping_message(self):
         store = BookStore()
-        sdk_message = parse_message(
-            {
-                "type": "snapshot",
-                "river_id": 123,
-                "data": frame().data,
-            }
-        )
+        message = {"type": "snapshot", "market_id": "ABC", "data": {
+            **frame().data, "market_id": "ABC"
+        }}
 
-        result = store.apply_message(sdk_message)
+        result = store.apply_message(message)
 
         self.assertEqual(result, StoreResult.STORED)
-        self.assertEqual(store.get(123).best_bid_price, 0.42)
+        self.assertEqual(store.get("ABC").best_bid_price, 0.42)
 
     def test_valid_update_replaces_full_book(self):
         store = BookStore()
@@ -77,15 +72,15 @@ class BookStoreTests(unittest.TestCase):
     def test_non_book_frame_is_ignored(self):
         store = BookStore()
 
-        result = store.apply_message(SimpleNamespace(type="pending", river_id=123))
+        result = store.apply_message(SimpleNamespace(type="pending", market_id=123))
 
         self.assertEqual(result, StoreResult.IGNORED)
         self.assertIsNone(store.get(123))
 
-    def test_mismatched_payload_river_id_is_rejected(self):
+    def test_mismatched_payload_market_id_is_rejected(self):
         store = BookStore()
         message = frame()
-        message.data["river_id"] = 999
+        message.data["market_id"] = 999
 
         with self.assertRaises(ValueError):
             store.apply_message(message)
