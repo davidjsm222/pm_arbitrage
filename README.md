@@ -7,6 +7,8 @@ It never places, modifies, or cancels orders.
 
 ## Setup
 
+Requires Python 3.10 or newer.
+
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -r requirements.txt
@@ -77,3 +79,11 @@ depth, staleness, and persistence gates. Press Enter or `d` for pair details,
 and `q` to quit.
 
 The application remains strictly observational. No trading endpoint is called.
+
+## Run the tests
+
+The suite is stdlib `unittest` and needs no extra packages:
+
+```bash
+.venv/bin/python -m unittest discover -s tests -t .
+```
